@@ -1,0 +1,5 @@
+{
+  "name": "Knowledge Mapper",
+  "description": "Visualizes complex topics as knowledge graphs using Google Search data. Enter a query to generate nodes and connections representing key concepts and their relationships.",
+  "requestFramePermissions": []
+}
