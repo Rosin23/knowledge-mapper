@@ -3,7 +3,7 @@ import GraphVisualization from './components/GraphVisualization';
 import { SourcePanel } from './components/SourcePanel';
 import BottomPanel from './components/BottomPanel';
 import { fetchKnowledgeGraph } from './services/geminiService';
-import { GraphData, Source, GraphNode } from './types';
+import { GraphData, Source, GraphNode, GroundingSupport } from './types';
 
 // Custom hook to persist state in localStorage
 function usePersistedState<T>(key: string, initialValue: T) {
@@ -38,6 +38,9 @@ const App: React.FC = () => {
   const [query, setQuery] = usePersistedState<string>('km_query', '');
   const [graphData, setGraphData] = usePersistedState<GraphData>('km_graphData', { nodes: [], edges: [] });
   const [sources, setSources] = usePersistedState<Source[]>('km_sources', []);
+  const [searchQueries, setSearchQueries] = usePersistedState<string[]>('km_searchQueries', []);
+  const [summary, setSummary] = usePersistedState<string>('km_summary', '');
+  const [groundingSupports, setGroundingSupports] = usePersistedState<GroundingSupport[]>('km_groundingSupports', []);
   
   // Transient UI State
   const [loading, setLoading] = useState(false);
@@ -89,12 +92,10 @@ const App: React.FC = () => {
 
   // Auto-open sidebar when sources are populated
   useEffect(() => {
-    // Only auto-open if we have sources and it's currently closed.
-    // Note: This runs on mount too. If user refreshed with sources, sidebar opens.
     if (sources.length > 0 && !isSidebarOpen) {
       setSidebarOpen(true);
     }
-  }, [sources]); // Intentionally kept simplistic as per original design
+  }, [sources]); 
 
   const startResizingSidebar = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -118,19 +119,28 @@ const App: React.FC = () => {
     setError(null);
     setSelectedNode(null);
     
-    // Explicitly clear graph data and sources to ensure a clean state for the new search
+    // Explicitly clear data
     setGraphData({ nodes: [], edges: [] });
     setSources([]);
+    setSearchQueries([]);
+    setSummary('');
+    setGroundingSupports([]);
 
     try {
-      const { graphData: newData, sources: newSources } = await fetchKnowledgeGraph(query);
-      setGraphData(newData);
-      setSources(newSources);
+      const response = await fetchKnowledgeGraph(query);
+      setGraphData(response.graphData);
+      setSources(response.sources);
+      setSearchQueries(response.searchQueries || []);
+      setSummary(response.summary || '');
+      setGroundingSupports(response.groundingSupports || []);
       
-      // If graph is empty but we have sources, show a specific error hint or just let the empty graph state handle it
-      if (newData.nodes.length === 0 && newSources.length > 0) {
+      if (response.sources.length > 0) {
+        setSidebarOpen(true);
+      }
+      
+      if (response.graphData.nodes.length === 0 && response.sources.length > 0) {
          setError("Search sources were found (see sidebar), but the AI could not generate a valid knowledge graph structure for this query. Please try a different or more specific topic.");
-      } else if (newData.nodes.length === 0) {
+      } else if (response.graphData.nodes.length === 0) {
          setError("No knowledge graph could be generated. Please try a different query.");
       }
     } catch (err: any) {
@@ -178,7 +188,12 @@ const App: React.FC = () => {
 
            {/* Content */}
            <div className="flex-1 min-h-0 relative">
-             <SourcePanel sources={sources} />
+             <SourcePanel 
+                sources={sources} 
+                searchQueries={searchQueries} 
+                summary={summary} 
+                groundingSupports={groundingSupports}
+             />
            </div>
            
            {/* Resize Handle */}
@@ -252,7 +267,7 @@ const App: React.FC = () => {
             )}
           </button>
 
-          {/* Collapsible Legend Overlay (Stacked above toggle button) */}
+          {/* Collapsible Legend Overlay */}
           <div className={`
               absolute bottom-16 right-4 z-20 bg-slate-900/90 backdrop-blur-md border border-slate-700 shadow-2xl rounded-lg transition-all duration-300
               ${isLegendOpen ? 'w-48 p-3' : 'w-auto p-2 cursor-pointer hover:bg-slate-800'}
